@@ -218,6 +218,52 @@ class QiskitDevice(QubitDevice, abc.ABC):
         self._state = None  # statevector of a simulator backend
         self.noise_model = None
 
+    def batch_execute(self, circuits):
+        qobjs = []
+        for circuit in circuits:
+            self.reset()
+            operations = circuit.operations
+            rotations = circuit.diagonalizing_gates
+
+            applied_operations = self.apply_operations(operations)
+
+            # Rotating the state for measurement in the computational basis
+            rotation_circuits = self.apply_operations(rotations)
+            applied_operations.extend(rotation_circuits)
+
+            for circuit in applied_operations:
+                self._circuit += circuit
+
+            if self.backend_name not in self._state_backends:
+                # Add measurements if they are needed
+                for qr, cr in zip(self._reg, self._creg):
+                    measure(self._circuit, qr, cr)
+
+            # These operations need to run for all devices
+            qobj = self.compile_simple()
+            qobjs.append(qobj)
+
+        job_manager = IBMQJobManager()
+        job_set_foo = job_manager.run(qobjs, backend=self.backend)
+        wait = job_set_foo.results()
+
+        results = []
+        for circuit in circuits:
+            results.append(self.statistics(circuit.observables))
+
+        return results
+
+    def compile_simple(self):
+        """Compile the quantum circuit to target the provided compile_backend.
+
+        If compile_backend is None, then the target is simply the
+        backend.
+        """
+        compile_backend = self.compile_backend or self.backend
+        compiled_circuits = transpile(self._circuit, backend=compile_backend, **self.transpile_args)
+
+        return compiled_circuits
+
     def apply(self, operations, **kwargs):
         rotations = kwargs.get("rotations", [])
 
