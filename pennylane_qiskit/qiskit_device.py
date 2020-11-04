@@ -245,13 +245,17 @@ class QiskitDevice(QubitDevice, abc.ABC):
             qobjs.append(qobj)
 
         job_manager = IBMQJobManager()
-        job_set_foo = job_manager.run(qobjs, backend=self.backend)
-        wait = job_set_foo.results()
+        job_set_foo = job_manager.run(qobjs, backend=self.backend, memory=True, shots=self.shots)
+        managed_results = job_set_foo.results(refresh=True)
 
         results = []
-        for circuit in circuits:
-            results.append(self.statistics(circuit.observables))
+        for i in range(len(circuits)):
+            if (not self.analytic) or circuits[i].is_sampled:
+              samples = managed_results.get_memory(i)
+              # reverse qubit order to match PennyLane convention
+              self._samples = np.vstack([np.array([int(i) for i in s[::-1]]) for s in samples])
 
+            results.append(self.statistics(circuits[i].observables))
         return results
 
     def compile_simple(self):
